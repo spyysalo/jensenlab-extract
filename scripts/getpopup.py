@@ -54,6 +54,7 @@ def main(argv):
             error('failed for {}: {}'.format(fn, e))
             continue
         write_response(fn, response, args)
+    return 0
 
 
 if __name__ == '__main__':
