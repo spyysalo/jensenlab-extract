@@ -175,9 +175,9 @@ class ExtractHTMLParser(HTMLParser):
 def create_id_map(identifiers):
     id_map = {}
     for name, type_, id_ in identifiers:
-        if id_ in id_map and id_map[id_] != (name, type):
+        if id_ in id_map and id_map[id_] != (name, type_):
             error('conflicting data for {}: {} vs {}'.\
-                  format(id_, id_map[id_], (name, type)))
+                  format(id_, id_map[id_], (name, type_)))
         id_map[id_] = (name, type_)
     return id_map
 
