@@ -11,6 +11,17 @@ from logging import error
 
 DEFAULT_URL = 'http://tagger.jensenlab.org/ExtractPopup'
 
+ENTITY_TYPES = [
+    '0',      # Genes/proteins
+    '-1',     # PubChem Compound identifiers
+    '-2',     # NCBI Taxonomy entries
+#    '-21',    # Gene Ontology biological process terms
+#    '-22',    # Gene Ontology cellular component terms
+#    '-23',    # Gene Ontology molecular function terms
+#    '-25',    # BRENDA Tissue Ontology terms
+    '-26',    # Disease Ontology terms
+#    '-27',    # Environment Ontology terms
+]
 
 def argparser():
     import argparse
@@ -26,7 +37,7 @@ def argparser():
 def extract_request(url, text):
     post_data = {
         'document': text,
-        'entity_types': '0 -1 -2 -21 -22 -23 -25 -26 -27',
+        'entity_types': ' '.join(ENTITY_TYPES)
     }
     r = requests.post(url, data=post_data)
     return r.text
