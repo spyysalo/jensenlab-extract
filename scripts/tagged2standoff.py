@@ -2,6 +2,7 @@
 
 import sys
 import os
+import errno
 
 import itertools
 import collections
@@ -15,7 +16,9 @@ def argparser():
     from argparse import ArgumentParser
     ap = ArgumentParser()
     ap.add_argument('-d', '--directory', default=None,
-                    help='Output directory (default STDOUT)')
+                    help='output directory (default STDOUT)')
+    ap.add_argument('-P', '--dir-prefix', type=int, default=None,
+                    help='add subdirectories with given length doc ID prefix')
     ap.add_argument('docs', help='tsv file with document text and data')
     ap.add_argument('tags', help='tsv file with tags for documents')
     return ap
@@ -195,14 +198,39 @@ def read_streams(docs, tags):
         warning('Extra line {} in {}: {}'.format(tag_it.index, tags.name, l))
 
 
+def output_directory(doc_id, options):
+    """Return directory to store document with given ID in."""
+    assert options.directory, 'internal error'
+    if options.dir_prefix is None:
+        return options.directory
+    else:
+        return os.path.join(options.directory, doc_id[:options.dir_prefix])
+
+
+# https://stackoverflow.com/a/600612
+def mkdir_p(path):
+    if path in mkdir_p.known_to_exist:
+        return
+    try:
+        os.makedirs(path)
+        mkdir_p.known_to_exist.add(path)
+    except OSError as exc:
+        if exc.errno == errno.EEXIST and os.path.isdir(path):
+            mkdir_p.known_to_exist.add(path)
+        else:
+            raise
+mkdir_p.known_to_exist = set()
+
 def write_standoff(document, mentions, options):
     if options.directory is None:    # STDOUT
         print(document)
         for m in mentions_to_standoffs(mentions):
             print(m)
     else:
-        txt_fn = os.path.join(options.directory, '{}.txt'.format(document.pmid))
-        ann_fn = os.path.join(options.directory, '{}.ann'.format(document.pmid))
+        outdir = output_directory(document.pmid, options)
+        mkdir_p(outdir)
+        txt_fn = os.path.join(outdir, '{}.txt'.format(document.pmid))
+        ann_fn = os.path.join(outdir, '{}.ann'.format(document.pmid))
         with open(txt_fn, 'w', encoding='utf-8') as txt_f:
             print(document, file=txt_f)
         with open(ann_fn, 'w', encoding='utf-8') as ann_f:
