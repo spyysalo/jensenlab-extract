@@ -271,6 +271,13 @@ def read_ids(fn):
     return ids
 
 
+def prec_rec_f(tp, fp, fn):
+    p = 1.*tp/(tp+fp) if tp+fp != 0 else 0
+    r = 1.*tp/(tp+fn) if tp+fn != 0 else 0
+    f = 2*p*r/(p+r) if p+r != 0 else 0
+    return p, r, f
+
+
 def main(argv):
     args = argparser().parse_args(argv[1:])
 
@@ -292,9 +299,7 @@ def main(argv):
     for m in sorted(set([k for k in stats.keys() if k.startswith('metrics')])):
         try:
             tp, fp, fn = stats[m]['TP'], stats[m]['FP'], stats[m]['FN']
-            p = 1.*tp/(tp+fp)
-            r = 1.*tp/(tp+fn)
-            f = 2*p*r/(p+r)
+            p, r, f = prec_rec_f(tp, fp, fn)
             print('{}: f:{:.2%} (p:{:.2%} r:{:.2%}, tp:{} fp:{} fn:{})'.format(
                 m, f, p, r, tp, fp, fn))
         except Exception as e:
