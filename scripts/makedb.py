@@ -47,7 +47,7 @@ def process(in_, dbname, lines, options):
 
 
 def count_lines(fn):
-    return sum(1 for l in open(fn))
+    return sum(1 for l in open(fn, 'rb'))
 
 
 def main(argv):
