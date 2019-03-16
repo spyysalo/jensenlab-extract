@@ -207,6 +207,16 @@ class Normalization(object):
             self.id, self.tb_id, self.norm_id, self.text)
 
 
+def norm_name(id_, default, options):
+    if id_ not in norm_name._cache:
+        if options.namedb is None:
+            return default
+        else:
+            norm_name._cache[id_] = options.namedb.get(id_, default)
+    return norm_name._cache[id_]
+norm_name._cache = {}
+
+
 def mentions_to_standoffs(mentions, options):
     standoffs = []
     # Mentions with identical span and type map to one textbound with
@@ -220,12 +230,9 @@ def mentions_to_standoffs(mentions, options):
         standoffs.append(Textbound(t_id, type_, start, end, text))
         for m in group:
             n_id = 'N{}'.format(next(n_idx))
-            if options.namedb is None:
-                norm_text = m.text    # name DB not available
-            else:
-                norm_text = options.namedb.get(m.serial, m.text)
+            n_name = norm_name(m.serial, m.text, options)
             standoffs.append(Normalization(
-                n_id, t_id, 'TAGGER:{}'.format(m.serial), norm_text))
+                n_id, t_id, 'TAGGER:{}'.format(m.serial), n_name))
     return standoffs
 
 
