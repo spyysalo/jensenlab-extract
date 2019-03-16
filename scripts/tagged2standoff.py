@@ -15,6 +15,8 @@ from logging import error, warning
 def argparser():
     from argparse import ArgumentParser
     ap = ArgumentParser()
+    ap.add_argument('-e', '--entitydb', default=None,
+                    help='sqlite DB mapping tagger IDs to external IDs')
     ap.add_argument('-n', '--namedb', default=None,
                     help='sqlite DB mapping tagger IDs to names')
     ap.add_argument('-d', '--directory', default=None,
@@ -159,7 +161,7 @@ class Mention(object):
         self.type = int(type_)
         self.serial = int(serial)
 
-        self.typename, self.organism = typename_and_species(self.type)
+        self.typename, self.species = typename_and_species(self.type)
 
     def validate_text(self, text):
         ref = text[self.start: self.end]
@@ -207,14 +209,46 @@ class Normalization(object):
             self.id, self.tb_id, self.norm_id, self.text)
 
 
-def norm_name(id_, default, options):
-    if id_ not in norm_name._cache:
+def get_norm_name(id_, default, options):
+    if id_ not in get_norm_name._cache:
         if options.namedb is None:
             return default
         else:
-            norm_name._cache[id_] = options.namedb.get(id_, default)
-    return norm_name._cache[id_]
-norm_name._cache = {}
+            get_norm_name._cache[id_] = options.namedb.get(id_, default)
+    return get_norm_name._cache[id_]
+get_norm_name._cache = {}
+
+
+def get_norm_id(id_, default, options):
+    if id_ not in get_norm_id._cache:
+        if options.entitydb is None:
+            return default
+        else:
+            get_norm_id._cache[id_] = options.entitydb.get(id_, default)
+    return get_norm_id._cache[id_]
+get_norm_id._cache = {}
+
+
+def rewrite_norm_id(id_, type_, species):
+    # Rewrite tagger IDs to NAMESPACE:ID format
+    if type_.startswith('Chemical') and id_.startswith('CIDs'):
+        id_ = id_.replace('CIDs', 'CID:', 1)
+    elif type_ == 'Organism' and id_.isdigit():
+        id_ = 'NCBITaxon:{}'.format(id_)
+    elif type_ == 'Gene':
+        if species == 'Arabidopsis thaliana' and id_.startswith('AT'):
+            id_ = id_.replace('AT', 'AT:', 1)    # TAIR (A. thaliana)
+        elif species == 'Drosophila melanogaster' and id_.startswith('FB'):
+            id_ = id_.replace('FB', 'FB:', 1)    # Flybase
+        elif species == 'Schizosaccharomyces pombe' and id_.startswith('SP'):
+            id_ = id_.replace('SP', 'SP:', 1)    # PomBase (S. pombe)
+        elif species == 'Caenorhabditis elegans' and ':' not in id_:
+            id_ = 'WB:{}'.format(id_)    # WormBase
+        elif species == 'Saccharomyces cerevisiae' and ':' not in id_:
+            id_ = 'SGD:{}'.format(id_)    # SGD (S. cerevisiae)
+        elif id_.startswith('ENS'):
+            id_ = id_.replace('ENS', 'ENS:', 1)    # Ensembl
+    return id_
 
 
 def mentions_to_standoffs(mentions, options):
@@ -230,9 +264,11 @@ def mentions_to_standoffs(mentions, options):
         standoffs.append(Textbound(t_id, type_, start, end, text))
         for m in group:
             n_id = 'N{}'.format(next(n_idx))
-            n_name = norm_name(m.serial, m.text, options)
-            standoffs.append(Normalization(
-                n_id, t_id, 'TAGGER:{}'.format(m.serial), n_name))
+            n_name = get_norm_name(m.serial, m.text, options)
+            norm_id = get_norm_id(m.serial, 'TAGGER:{}'.format(m.serial),
+                                  options)
+            norm_id = rewrite_norm_id(norm_id, type_, m.species)
+            standoffs.append(Normalization(n_id, t_id, norm_id, n_name))
     return standoffs
 
 
@@ -313,6 +349,8 @@ def open_db(fn, flag='r'):
 
 def main(argv):
     args = argparser().parse_args(argv[1:])
+    if args.entitydb is not None:
+        args.entitydb = open_db(args.entitydb)
     if args.namedb is not None:
         args.namedb = open_db(args.namedb)
     process(args.docs, args.tags, args)
