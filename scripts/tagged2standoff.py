@@ -9,12 +9,14 @@ import collections
 
 from itertools import tee, count
 from collections import defaultdict
-from logging import error
+from logging import error, warning
 
 
 def argparser():
     from argparse import ArgumentParser
     ap = ArgumentParser()
+    ap.add_argument('-n', '--namedb', default=None,
+                    help='sqlite DB mapping tagger IDs to names')
     ap.add_argument('-d', '--directory', default=None,
                     help='output directory (default STDOUT)')
     ap.add_argument('-P', '--dir-prefix', type=int, default=None,
@@ -44,10 +46,51 @@ TYPE_MAP = {
     -36: 'Phenotype',	 # mammalian phenotypes
 }
 
+# From NCBI Taxonomy
+TAXID_NAME_MAP = {
+    3702: 'Arabidopsis thaliana',
+    4896: 'Schizosaccharomyces pombe',
+    4932: 'Saccharomyces cerevisiae',
+    6239: 'Caenorhabditis elegans',
+    7227: 'Drosophila melanogaster',
+    7955: 'Danio rerio',
+    9031: 'Gallus gallus',
+    9606: 'Homo sapiens',
+    9823: 'Sus scrofa',
+    9913: 'Bos taurus',
+    10090: 'Mus musculus',
+    10116: 'Rattus norvegicus',
+}
+
+def load_taxid_name_map(fn):
+    taxid_name_map = {}
+    try:
+        print('loading taxid-name map from {} ... '.format(fn),
+              end='', file=sys.stderr, flush=True)
+        with open(fn) as f:
+            for line in f:
+                id_, name = line.rstrip('\n').split('\t')
+                taxid_name_map[int(id_)] = name
+        print('done.', file=sys.stderr)
+    except Exception as e:
+        error('failed to load {}: {}'.format(fn, e))
+        return None
+    return taxid_name_map
+
+
+def get_taxname(taxid):
+    """Return scientific name for NCBI Taxonomy ID."""
+    if get_taxname.id_name_map is None:
+        get_taxname.id_name_map = load_taxid_name_map('data/taxnames.tsv')
+        if get_taxname.id_name_map is None:    # assume fail, fallback
+            get_taxname.id_name_map = TAXID_NAME_MAP
+    return get_taxname.id_name_map.get(taxid, '<UNKNOWN>')
+get_taxname.id_name_map = None
+
 
 def typename_and_species(type_):
     if type_ > 0:    # Gene/protein of species with this NCBI tax id
-        return ('Gene', 'TODO')
+        return ('Gene', get_taxname(type_))
     elif type_ < 0 and type_ in TYPE_MAP:    # Lookup, no species information
         return (TYPE_MAP[type_], None)
     else:
@@ -114,7 +157,7 @@ class Mention(object):
         self.end = int(end) + 1  # adjust inclusive to exclusive
         self.text = text
         self.type = int(type_)
-        self.serial = serial
+        self.serial = int(serial)
 
         self.typename, self.organism = typename_and_species(self.type)
 
@@ -164,7 +207,7 @@ class Normalization(object):
             self.id, self.tb_id, self.norm_id, self.text)
 
 
-def mentions_to_standoffs(mentions):
+def mentions_to_standoffs(mentions, options):
     standoffs = []
     # Mentions with identical span and type map to one textbound with
     # multiple normalizations.
@@ -177,8 +220,12 @@ def mentions_to_standoffs(mentions):
         standoffs.append(Textbound(t_id, type_, start, end, text))
         for m in group:
             n_id = 'N{}'.format(next(n_idx))
+            if options.namedb is None:
+                norm_text = m.text    # name DB not available
+            else:
+                norm_text = options.namedb.get(m.serial, m.text)
             standoffs.append(Normalization(
-                n_id, t_id, 'TAGGER:{}'.format(m.serial), m.text))
+                n_id, t_id, 'TAGGER:{}'.format(m.serial), norm_text))
     return standoffs
 
 
@@ -222,10 +269,11 @@ def mkdir_p(path):
 mkdir_p.known_to_exist = set()
 
 def write_standoff(document, mentions, options):
+    standoffs = mentions_to_standoffs(mentions, options)
     if options.directory is None:    # STDOUT
         print(document)
-        for m in mentions_to_standoffs(mentions):
-            print(m)
+        for s in standoffs:
+            print(s)
     else:
         outdir = output_directory(document.pmid, options)
         mkdir_p(outdir)
@@ -234,8 +282,8 @@ def write_standoff(document, mentions, options):
         with open(txt_fn, 'w', encoding='utf-8') as txt_f:
             print(document, file=txt_f)
         with open(ann_fn, 'w', encoding='utf-8') as ann_f:
-            for m in mentions_to_standoffs(mentions):
-                print(m, file=ann_f)
+            for s in standoffs:
+                print(s, file=ann_f)
               
 
 def process(docfn, tagfn, options):
@@ -245,8 +293,21 @@ def process(docfn, tagfn, options):
                 write_standoff(document, mentions, options)
 
 
+def open_db(fn, flag='r'):
+    try:
+        import sqlitedict
+    except ImportError:
+        error('failed to import sqlitedict; try `pip3 install sqlitedict`')
+        raise
+    if not os.path.exists(fn):
+        raise IOError("no such file: '{}'".format(fn))
+    return sqlitedict.SqliteDict(fn, flag=flag)
+
+
 def main(argv):
     args = argparser().parse_args(argv[1:])
+    if args.namedb is not None:
+        args.namedb = open_db(args.namedb)
     process(args.docs, args.tags, args)
     return 0
 
