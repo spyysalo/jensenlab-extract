@@ -20,6 +20,8 @@ DEFAULT_MAXERR = 100
 def argparser():
     from argparse import ArgumentParser
     ap = ArgumentParser()
+    ap.add_argument('-f', '--value-field', metavar='INT', type=int, default=2,
+                    help='TSV column containing values (default 2)')
     ap.add_argument('-i', '--commit-interval', metavar='INT', type=int,
                     default=DEFAULT_INTERVAL,
                     help='number of items to input between commits')
@@ -32,6 +34,7 @@ def argparser():
 
 
 def process_interval(in_, dbname, idx, end, limit, options):
+    value_index = options.value_field-1    # 1-based to 0-based
     seen_keys = process_interval.seen_keys
     end = min(end, limit)
     with sqlitedict.SqliteDict(dbname, autocommit=False) as db:
@@ -45,7 +48,7 @@ def process_interval(in_, dbname, idx, end, limit, options):
             try:
                 line = line.decode('utf-8')
                 fields = line.rstrip('\n').split('\t')
-                key, value = fields
+                key, value = fields[0], fields[value_index]
                 key = int(key)
                 if key not in seen_keys:    # only add first
                     db[key] = value
@@ -88,6 +91,8 @@ def count_lines(fn):
 
 def main(argv):
     args = argparser().parse_args(argv[1:])
+    if args.value_field < 2:
+        raise ValueError('--value_field must be 2 or greater')
     line_count = count_lines(args.dict)
     with open(args.dict, 'rb') as in_:
         process(in_, args.dbname, line_count, args)
