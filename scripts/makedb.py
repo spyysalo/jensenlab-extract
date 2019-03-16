@@ -14,6 +14,8 @@ except ImportError:
 
 DEFAULT_INTERVAL = 10**6
 
+DEFAULT_MAXERR = 100
+
 
 def argparser():
     from argparse import ArgumentParser
@@ -21,6 +23,9 @@ def argparser():
     ap.add_argument('-i', '--commit-interval', metavar='INT', type=int,
                     default=DEFAULT_INTERVAL,
                     help='number of items to input between commits')
+    ap.add_argument('-e', '--max-errors', metavar='INT', type=int,
+                    default=DEFAULT_MAXERR,
+                    help='maximum number of errors to ignore')
     ap.add_argument('dict', help='input dictionary in key-value TSV format')
     ap.add_argument('dbname', help='output database name')
     return ap
@@ -38,6 +43,7 @@ def process_interval(in_, dbname, idx, end, limit, options):
                 error('unexpected EOF in {} at line {}'.format(in_.name, ln))
                 break
             try:
+                line = line.decode('utf-8')
                 fields = line.rstrip('\n').split('\t')
                 key, value = fields
                 key = int(key)
@@ -45,8 +51,10 @@ def process_interval(in_, dbname, idx, end, limit, options):
                     db[key] = value
                     seen_keys.add(key)
             except Exception as e:
-                error('on line {} in {}: {}'.format(ln, in_.name, line))
-                raise
+                error('on line {} in {} (skip): {}'.format(ln, in_.name, e))
+                options.max_errors -= 1
+                if options.max_errors <= 0:
+                    raise RuntimeError('max-errors exceeded, aborting.')
             if ln % 1024 == 0:
                 print('Read {}/{} ({:.1%}) lines'.format(ln, limit, ln/limit),
                       end='\r', file=sys.stderr, flush=True)
@@ -81,7 +89,7 @@ def count_lines(fn):
 def main(argv):
     args = argparser().parse_args(argv[1:])
     line_count = count_lines(args.dict)
-    with open(args.dict) as in_:
+    with open(args.dict, 'rb') as in_:
         process(in_, args.dbname, line_count, args)
     return 0
 
