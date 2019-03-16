@@ -11,5 +11,16 @@ Tools for working with EXTRACT (https://extract.jensenlab.org/)
 ```
 ./scripts/download_dict.sh tagger
 
-python3 scripts/makedb.py data/tagger-dict/tagger_name.tsv db/names.sqlite
+
+mkdir db
+python3 scripts/makedb.py data/tagger-dict/tagger_names.tsv db/tagger-names.sqlite
+```
+
+## For full dictionary
+
+```
+./scripts/download_dict.sh full
+
+mkdir db
+python3 scripts/makedb.py data/full-dict/full_names.tsv db/full-names.sqlite
 ```
