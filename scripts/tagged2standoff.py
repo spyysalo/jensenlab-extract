@@ -15,6 +15,8 @@ from logging import error, warning
 def argparser():
     from argparse import ArgumentParser
     ap = ArgumentParser()
+    ap.add_argument('-l', '--limit', type=int, metavar='INT', default=None,
+                    help='maximum number of documents to convert')
     ap.add_argument('-e', '--entitydb', default=None,
                     help='sqlite DB mapping tagger IDs to external IDs')
     ap.add_argument('-n', '--namedb', default=None,
@@ -330,10 +332,15 @@ def write_standoff(document, mentions, options):
               
 
 def process(docfn, tagfn, options):
+    count = 0
     with open(docfn, encoding='utf-8') as docf:
         with open(tagfn, encoding='utf-8') as tagf:
             for document, mentions in read_streams(docf, tagf):
+                if count >= options.limit:
+                    break
                 write_standoff(document, mentions, options)
+                count += 1
+    return count
 
 
 def open_db(fn, flag='r'):
@@ -353,7 +360,8 @@ def main(argv):
         args.entitydb = open_db(args.entitydb)
     if args.namedb is not None:
         args.namedb = open_db(args.namedb)
-    process(args.docs, args.tags, args)
+    count = process(args.docs, args.tags, args)
+    print('Done, processed {} documents.'.format(count), file=sys.stderr)
     return 0
 
 
