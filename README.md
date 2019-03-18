@@ -16,6 +16,12 @@ python3 scripts/tagged2standoff.py -d standoff examples/example-{docs,tags}.tsv
 
 ## Name and entity DBs
 
+Get ID-name mapping from NCBI taxonomy data
+
+```
+./scripts/gettaxnames.sh
+```
+
 Prepare DBs using "tagger" dictionary subset
 
 ```
