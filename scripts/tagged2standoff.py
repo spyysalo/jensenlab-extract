@@ -294,8 +294,12 @@ def read_streams(docs, tags):
             mention.validate_text(doc_text)
             mentions.append(mention)
         yield document, mentions
-    for l in tag_it:
-        warning('Extra line {} in {}: {}'.format(tag_it.index, tags.name, l))
+    for i, l in enumerate(tag_it, start=1):
+        l = l.rstrip('\n')
+        warning('extra line {} in {}: {}'.format(tag_it.index, tags.name, l))
+        if i >= 10:
+            warning('{} extra lines, ignoring rest'.format(i))
+            break
 
 
 def output_directory(doc_id, options):
@@ -328,12 +332,11 @@ def write_standoff(document, mentions, options):
         print(document)
         for s in standoffs:
             print(s)
-    elif options.database:
-        with sqlitedict.SqliteDict(options.database, autocommit=True) as db:
-            txt_key = '{}.txt'.format(document.pmid)
-            ann_key = '{}.ann'.format(document.pmid)
-            db[txt_key] = str(document)
-            db[ann_key] = '\n'.join(str(s) for s in standoffs)
+    elif options.database is not None:
+        txt_key = '{}.txt'.format(document.pmid)
+        ann_key = '{}.ann'.format(document.pmid)
+        options.database[txt_key] = str(document)
+        options.database[ann_key] = '\n'.join(str(s) for s in standoffs)
     else:
         outdir = output_directory(document.pmid, options)
         mkdir_p(outdir)
@@ -351,10 +354,22 @@ def process(docfn, tagfn, options):
     with open(docfn, encoding='utf-8') as docf:
         with open(tagfn, encoding='utf-8') as tagf:
             for document, mentions in read_streams(docf, tagf):
-                if count >= options.limit:
+                if options.limit and count >= options.limit:
                     break
                 write_standoff(document, mentions, options)
                 count += 1
+                if count % 1024 == 0:
+                    print('Processed {} ...'.format(count), end='\r',
+                          file=sys.stderr, flush=True)
+                if options.database and count % 10000 == 0:
+                    print('Processed {}, committing ...'.format(count),
+                          file=sys.stderr)
+                    options.database.commit()
+    print('Done, processed {} documents.'.format(count), file=sys.stderr)
+    if options.database:
+        print('Committing ...', end='', flush=True, file=sys.stderr)
+        options.database.commit()
+        print('done.', file=sys.stderr)
     return count
 
 
@@ -369,12 +384,13 @@ def main(argv):
     if args.directory and args.database:
         error('cannot output to both --directory and --database')
         return 1
+    if args.database:
+        args.database = sqlitedict.SqliteDict(args.database)
     if args.entitydb is not None:
         args.entitydb = open_db(args.entitydb)
     if args.namedb is not None:
         args.namedb = open_db(args.namedb)
     count = process(args.docs, args.tags, args)
-    print('Done, processed {} documents.'.format(count), file=sys.stderr)
     return 0
 
 
