@@ -11,6 +11,12 @@ from itertools import tee, count
 from collections import defaultdict
 from logging import error, warning
 
+try:
+    import sqlitedict
+except ImportError:
+    error('failed to import sqlitedict; try `pip3 install sqlitedict`')
+    raise
+
 
 def argparser():
     from argparse import ArgumentParser
@@ -23,6 +29,8 @@ def argparser():
                     help='sqlite DB mapping tagger IDs to names')
     ap.add_argument('-d', '--directory', default=None,
                     help='output directory (default STDOUT)')
+    ap.add_argument('-D', '--database', default=None,
+                    help='output database (default STDOUT)')
     ap.add_argument('-P', '--dir-prefix', type=int, default=None,
                     help='add subdirectories with given length doc ID prefix')
     ap.add_argument('docs', help='tsv file with document text and data')
@@ -313,12 +321,19 @@ def mkdir_p(path):
             raise
 mkdir_p.known_to_exist = set()
 
+
 def write_standoff(document, mentions, options):
     standoffs = mentions_to_standoffs(mentions, options)
-    if options.directory is None:    # STDOUT
+    if options.directory is None and options.database is None:    # STDOUT
         print(document)
         for s in standoffs:
             print(s)
+    elif options.database:
+        with sqlitedict.SqliteDict(options.database, autocommit=True) as db:
+            txt_key = '{}.txt'.format(document.pmid)
+            ann_key = '{}.ann'.format(document.pmid)
+            db[txt_key] = str(document)
+            db[ann_key] = '\n'.join(str(s) for s in standoffs)
     else:
         outdir = output_directory(document.pmid, options)
         mkdir_p(outdir)
@@ -344,11 +359,6 @@ def process(docfn, tagfn, options):
 
 
 def open_db(fn, flag='r'):
-    try:
-        import sqlitedict
-    except ImportError:
-        error('failed to import sqlitedict; try `pip3 install sqlitedict`')
-        raise
     if not os.path.exists(fn):
         raise IOError("no such file: '{}'".format(fn))
     return sqlitedict.SqliteDict(fn, flag=flag)
@@ -356,6 +366,9 @@ def open_db(fn, flag='r'):
 
 def main(argv):
     args = argparser().parse_args(argv[1:])
+    if args.directory and args.database:
+        error('cannot output to both --directory and --database')
+        return 1
     if args.entitydb is not None:
         args.entitydb = open_db(args.entitydb)
     if args.namedb is not None:
