@@ -282,13 +282,25 @@ def mentions_to_standoffs(mentions, options):
     return standoffs
 
 
+def skippable_line(line):
+    # empty lines and comments are skippable
+    return len(line) == 0 or line.isspace() or line[0] == '#'
+
+
 def read_streams(docs, tags):
     tag_it = LookaheadIterator(tags, start=1)
     for doc_ln, doc_line in enumerate(docs, start=1):
         document = Document.from_tsv(doc_line, doc_ln, docs.name)
         doc_text = document.text
         mentions = []
-        while tag_it and tag_it.lookahead.split('\t')[0] == document.pmid:
+        while tag_it:
+            if skippable_line(tag_it.lookahead):
+                tag_line, tag_ln = next(tag_it), tag_it.index
+                warning('skipping line {} in {}: {}'.format(
+                    tag_ln, tags.name, tag_line.rstrip('\n')))
+                continue
+            elif tag_it.lookahead.split('\t')[0] != document.pmid:
+                break    # tagged for next document
             tag_line, tag_ln = next(tag_it), tag_it.index
             mention = Mention.from_tsv(tag_line, tag_ln, tags.name)
             mention.validate_text(doc_text)
