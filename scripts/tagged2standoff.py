@@ -275,6 +275,9 @@ def mentions_to_standoffs(mentions, options):
         for m in group:
             n_id = 'N{}'.format(next(n_idx))
             n_name = get_norm_name(m.serial, m.text, options)
+            # if we have a species name, add it to the norm text
+            if m.species:
+                n_name = n_name + ' ({})'.format(m.species)
             norm_id = get_norm_id(m.serial, 'TAGGER:{}'.format(m.serial),
                                   options)
             norm_id = rewrite_norm_id(norm_id, type_, m.species)
