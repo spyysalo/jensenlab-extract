@@ -8,7 +8,13 @@ import os
 
 from collections import defaultdict
 from itertools import chain
-from logging import warning, info
+from logging import info, warning, error
+
+try:
+    import sqlitedict
+except ImportError:
+    error('failed to import sqlitedict, try `pip3 install sqlitedict`')
+    raise
 
 
 TYPE_MAP = {
@@ -97,21 +103,19 @@ class Normalization(object):
         return cls(id_, type_, tb_id, norm_id, text)
 
 
-def parse_standoff(fn):
+def parse_standoff(ann, fn='<INPUT>'):
     textbounds = []
     normalizations = []
-    with open(fn) as f:
-        for ln, l in enumerate(f, start=1):
-            l = l.rstrip('\n')
-            if not l or l.isspace():
-                continue
-            elif l[0] == 'T':
-                textbounds.append(Textbound.from_standoff(l))
-            elif l[0] == 'N':
-                normalizations.append(Normalization.from_standoff(l))
-            else:
-                warning('skipping line {} in {}: {}'.format(ln, fn, l))
-                continue
+    for ln, l in enumerate(ann.splitlines(), start=1):
+        if not l or l.isspace():
+            continue
+        elif l[0] == 'T':
+            textbounds.append(Textbound.from_standoff(l))
+        elif l[0] == 'N':
+            normalizations.append(Normalization.from_standoff(l))
+        else:
+            warning('skipping line {} in {}: {}'.format(ln, fn, l))
+            continue
 
     # Attach normalizations to textbounds
     tb_by_id = {}
@@ -160,11 +164,7 @@ def retype_by_norm(annotations, from_to_ids_list):
     return annotations
 
 
-def compare_files(file1, file2, options, stats):
-    assert os.path.isfile(file1) and os.path.isfile(file2)
-
-    ann1 = parse_standoff(file1)
-    ann2 = parse_standoff(file2)
+def compare_annotations(ann1, ann2, options, stats, label):
     if options.retype:
         ann1 = retype_by_norm(ann1, options.retype)
         ann2 = retype_by_norm(ann2, options.retype)
@@ -218,8 +218,34 @@ def compare_files(file1, file2, options, stats):
         score = -max(len(only1), len(only2))
     else:
         score = max(len(match1), len(match2))
-    print('SCORE {}\t{}'.format(score, file1))
+    print('SCORE {}\t{}'.format(score, label))
     
+    return stats
+
+
+def compare_files(file1, file2, options, stats):
+    assert os.path.isfile(file1) and os.path.isfile(file2)
+
+    with open(file1) as f1:
+        ann1 = parse_standoff(f1.read(), file1)
+    with open(file2) as f2:
+        ann2 = parse_standoff(f2.read(), file2)
+    return compare_annotations(ann1, ann2, options, stats, file1)
+
+
+def compare_dbs(path1, path2, options, stats):
+    with sqlitedict.SqliteDict(path1, flag='r') as db1:
+        with sqlitedict.SqliteDict(path2, flag='r') as db2:
+            for key, val1 in db1.items():
+                if os.path.splitext(key)[1] != options.suffix:
+                    continue
+                val2 = db2.get(key)
+                if val2 is None:
+                    warning('{} not found in {}'.format(key, path2))
+                    continue
+                ann1 = parse_standoff(val1, '{}/{}'.format(path1, key))
+                ann2 = parse_standoff(val2, '{}/{}'.format(path2, key))
+                stats = compare_annotations(ann1, ann2, options, stats, key)
     return stats
 
 
@@ -239,10 +265,24 @@ def compare_dirs(dir1, dir2, options, stats):
     return stats
 
 
+def is_sqlite_db(path):
+    # TODO better identification
+    return os.path.splitext(os.path.basename(path))[1] == '.sqlite'
+
+
 def compare(path1, path2, options, stats=None):
     if stats is None:
         stats = defaultdict(lambda: defaultdict(int))
-    if os.path.isfile(path1):
+    if is_sqlite_db(path1):
+        if is_sqlite_db(path2):
+            return compare_dbs(path1, path2, options, stats)
+        elif not os.path.exists(path2):
+            warning('error: {} does not exist'.format(path2))
+            return stats
+        else:
+            warning('mismatch: {} is DB, {} is not'.format(path1, path2))
+            return stats
+    elif os.path.isfile(path1):
         if os.path.isfile(path2):
             return compare_files(path1, path2, options, stats)
         elif not os.path.exists(path2):
