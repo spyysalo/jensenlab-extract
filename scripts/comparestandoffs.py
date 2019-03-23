@@ -26,6 +26,8 @@ TYPE_MAP = {
     'org': 'Organism',
     # EXTRACT
     'Chemical_compound': 'Chemical',
+    # PubTator
+    'Species': 'Organism',
 }
 
 
@@ -69,9 +71,13 @@ class Textbound(object):
 
     @staticmethod
     def parse_span(span):
-        start, end = span.split(' ')
-        start = int(start)
-        end = int(end)
+        if ';' not in span:
+            start, end = (int(i) for i in span.split(' '))
+        else:
+            start = min(int(f.split(' ')[0]) for f in span.split(';'))
+            end = max(int(f.split(' ')[1]) for f in span.split(';'))
+            warning('multi-span Textbound ({}), using max span ({} {})'.\
+                    format(span, start, end))
         return start, end
 
     @classmethod
