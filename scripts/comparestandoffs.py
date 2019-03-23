@@ -110,9 +110,17 @@ def parse_standoff(ann, fn='<INPUT>'):
         if not l or l.isspace():
             continue
         elif l[0] == 'T':
-            textbounds.append(Textbound.from_standoff(l))
+            try:
+                textbounds.append(Textbound.from_standoff(l))
+            except Exception as e:
+                error('line {} in {}: {}'.format(ln, fn, l))
+                raise
         elif l[0] == 'N':
-            normalizations.append(Normalization.from_standoff(l))
+            try:
+                normalizations.append(Normalization.from_standoff(l))
+            except Exception as e:
+                error('line {} in {}: {}'.format(ln, fn, l))
+                raise
         else:
             warning('skipping line {} in {}: {}'.format(ln, fn, l))
             continue
@@ -284,7 +292,11 @@ def compare(path1, path2, options, stats=None):
             return stats
     elif os.path.isfile(path1):
         if os.path.isfile(path2):
-            return compare_files(path1, path2, options, stats)
+            try:
+                return compare_files(path1, path2, options, stats)
+            except Exception as e:
+                error('failed compare_files {} {}'.format(path1, path2))
+                raise
         elif not os.path.exists(path2):
             warning('error: {} does not exist'.format(path2))
             return stats
