@@ -40,6 +40,8 @@ def argparser():
                     help='Apply mapping to type names (consistency)')
     ap.add_argument('-M', '--forcemap', default=False, action='store_true',
                     help='Always map types when mapping exists')
+    ap.add_argument('-o', '--overlap', default=False, action='store_true',
+                    help='Accept annotation overlap as match')
     ap.add_argument('-r', '--retype',
                     metavar='FROM:TO:FILE[;FROM:TO:FILE ...]',
                     help='Retype annotations with norm ID in file.')
@@ -145,16 +147,30 @@ def maptype(type_):
     return TYPE_MAP.get(type_, type_)
 
 
-def types_match(type1, type2, text, options):
+def types_match(type1, type2, text1, text2, options):
+    if text1 == text2:
+        text = '"{}"'.format(text1)
+    else:
+        text = '"{}"/"{}"'.format(text1, text2)
+
     if not options.maptypes:
         match = type1 == type2
     else:
-        match = (type1 == type2 or maptype(type1) == type2 or
-                 type1 == maptype(type2) or maptype(type1) == maptype(type2))
+        match = (
+            type1 == type2 or
+            maptype(type1) == type2 or
+            type1 == maptype(type2) or
+            maptype(type1) == maptype(type2)
+        )
+
     if match:
         print('type match: "{}" vs "{}" ("{}")'.format(type1, type2, text))
     if not match:
         print('TYPE MISMATCH: "{}" vs "{}" ("{}")'.format(type1, type2, text))
+
+    if match and text1 != text2:
+        print('OVERLAP-MATCH: "{}" vs "{}" ("{}")'.format(type1, type2, text))
+
     return match
 
 
@@ -192,8 +208,20 @@ def compare_annotations(ann1, ann2, options, stats, label):
     match1, only1 = set(), set()
     match2, only2 = set(), set()
     for a1 in ann1:
-        a2m = [a2 for a2 in ann2 if a1.start == a2.start and a1.end == a2.end
-               and types_match(a1.type, a2.type, a1.text, options)]
+        if not options.overlap:
+            a2m = [
+                a2 for a2 in ann2 if
+                a1.start == a2.start and
+                a1.end == a2.end and
+                types_match(a1.type, a2.type, a1.text, a2.text, options)
+            ]
+        else:
+            a2m = [
+                a2 for a2 in ann2 if
+                ((a1.start <= a2.start and a1.end >= a2.start) or
+                 (a1.start <= a2.end and a1.end >= a2.end)) and
+                types_match(a1.type, a2.type, a1.text, a2.text, options)
+            ]
         if a2m:
             print('MATCH: "{}" ({}/{})'.format(a1.text, a1.type, a2m[0].type))
             match1.add(a1)
