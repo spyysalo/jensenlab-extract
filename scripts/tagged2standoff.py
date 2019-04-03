@@ -11,6 +11,8 @@ from itertools import tee, count
 from collections import defaultdict
 from logging import error, warning
 
+from standoff import Textbound, Normalization
+
 try:
     import sqlitedict
 except ImportError:
@@ -192,31 +194,6 @@ class Mention(object):
             raise FormatError('line {} in {}: expected 8 fields, got {}: {}'.\
                               format(ln, fn, len(fields), line))
         return cls(*fields)
-
-
-class Textbound(object):
-    def __init__(self, id_, type_, start, end, text):
-        self.id = id_
-        self.type = type_
-        self.start = start
-        self.end = end
-        self.text = text
-
-    def __str__(self):
-        return '{}\t{} {} {}\t{}'.format(
-            self.id, self.type, self.start, self.end, self.text)
-
-
-class Normalization(object):
-    def __init__(self, id_, tb_id, norm_id, text):
-        self.id = id_
-        self.tb_id = tb_id
-        self.norm_id = norm_id
-        self.text = text
-
-    def __str__(self):
-        return '{}\tReference {} {}\t{}'.format(
-            self.id, self.tb_id, self.norm_id, self.text)
 
 
 def get_norm_name(id_, default, options):
