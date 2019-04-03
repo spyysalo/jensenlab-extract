@@ -26,6 +26,8 @@ TYPE_MAP = {
     'org': 'Organism',
     # EXTRACT
     'Chemical_compound': 'Chemical',
+    # PubTator
+    'Species': 'Organism',
 }
 
 
@@ -38,6 +40,8 @@ def argparser():
                     help='Apply mapping to type names (consistency)')
     ap.add_argument('-M', '--forcemap', default=False, action='store_true',
                     help='Always map types when mapping exists')
+    ap.add_argument('-o', '--overlap', default=False, action='store_true',
+                    help='Accept annotation overlap as match')
     ap.add_argument('-r', '--retype',
                     metavar='FROM:TO:FILE[;FROM:TO:FILE ...]',
                     help='Retype annotations with norm ID in file.')
@@ -69,9 +73,13 @@ class Textbound(object):
 
     @staticmethod
     def parse_span(span):
-        start, end = span.split(' ')
-        start = int(start)
-        end = int(end)
+        if ';' not in span:
+            start, end = (int(i) for i in span.split(' '))
+        else:
+            start = min(int(f.split(' ')[0]) for f in span.split(';'))
+            end = max(int(f.split(' ')[1]) for f in span.split(';'))
+            warning('multi-span Textbound ({}), using max span ({} {})'.\
+                    format(span, start, end))
         return start, end
 
     @classmethod
@@ -110,9 +118,17 @@ def parse_standoff(ann, fn='<INPUT>'):
         if not l or l.isspace():
             continue
         elif l[0] == 'T':
-            textbounds.append(Textbound.from_standoff(l))
+            try:
+                textbounds.append(Textbound.from_standoff(l))
+            except Exception as e:
+                error('line {} in {}: {}'.format(ln, fn, l))
+                raise
         elif l[0] == 'N':
-            normalizations.append(Normalization.from_standoff(l))
+            try:
+                normalizations.append(Normalization.from_standoff(l))
+            except Exception as e:
+                error('line {} in {}: {}'.format(ln, fn, l))
+                raise
         else:
             warning('skipping line {} in {}: {}'.format(ln, fn, l))
             continue
@@ -131,16 +147,30 @@ def maptype(type_):
     return TYPE_MAP.get(type_, type_)
 
 
-def types_match(type1, type2, text, options):
+def types_match(type1, type2, text1, text2, options):
+    if text1 == text2:
+        text = '"{}"'.format(text1)
+    else:
+        text = '"{}"/"{}"'.format(text1, text2)
+
     if not options.maptypes:
         match = type1 == type2
     else:
-        match = (type1 == type2 or maptype(type1) == type2 or
-                 type1 == maptype(type2) or maptype(type1) == maptype(type2))
+        match = (
+            type1 == type2 or
+            maptype(type1) == type2 or
+            type1 == maptype(type2) or
+            maptype(type1) == maptype(type2)
+        )
+
     if match:
         print('type match: "{}" vs "{}" ("{}")'.format(type1, type2, text))
     if not match:
         print('TYPE MISMATCH: "{}" vs "{}" ("{}")'.format(type1, type2, text))
+
+    if match and text1 != text2:
+        print('OVERLAP-MATCH: "{}" vs "{}" ("{}")'.format(type1, type2, text))
+
     return match
 
 
@@ -178,8 +208,20 @@ def compare_annotations(ann1, ann2, options, stats, label):
     match1, only1 = set(), set()
     match2, only2 = set(), set()
     for a1 in ann1:
-        a2m = [a2 for a2 in ann2 if a1.start == a2.start and a1.end == a2.end
-               and types_match(a1.type, a2.type, a1.text, options)]
+        if not options.overlap:
+            a2m = [
+                a2 for a2 in ann2 if
+                a1.start == a2.start and
+                a1.end == a2.end and
+                types_match(a1.type, a2.type, a1.text, a2.text, options)
+            ]
+        else:
+            a2m = [
+                a2 for a2 in ann2 if
+                ((a1.start <= a2.start and a1.end >= a2.start) or
+                 (a1.start <= a2.end and a1.end >= a2.end)) and
+                types_match(a1.type, a2.type, a1.text, a2.text, options)
+            ]
         if a2m:
             print('MATCH: "{}" ({}/{})'.format(a1.text, a1.type, a2m[0].type))
             match1.add(a1)
@@ -284,7 +326,11 @@ def compare(path1, path2, options, stats=None):
             return stats
     elif os.path.isfile(path1):
         if os.path.isfile(path2):
-            return compare_files(path1, path2, options, stats)
+            try:
+                return compare_files(path1, path2, options, stats)
+            except Exception as e:
+                error('failed compare_files {} {}'.format(path1, path2))
+                raise
         elif not os.path.exists(path2):
             warning('error: {} does not exist'.format(path2))
             return stats
