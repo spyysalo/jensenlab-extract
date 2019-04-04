@@ -138,7 +138,11 @@ def parse_standoff(ann, fn='<INPUT>'):
     for t in textbounds:
         tb_by_id[t.id] = t
     for n in normalizations:
-        tb_by_id[n.tb_id].normalizations.append(n)
+        tb = tb_by_id.get(n.tb_id)
+        if tb is not None:
+            tb.normalizations.append(n)
+        else:
+            error('skip normalization for unknown textbound: {}'.format(n))
 
     return textbounds
 
