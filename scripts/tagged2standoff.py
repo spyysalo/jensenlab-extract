@@ -9,7 +9,7 @@ import collections
 
 from itertools import tee, count
 from collections import defaultdict
-from logging import error, warning
+from logging import info, warning, error
 
 from standoff import Textbound, Normalization
 
@@ -156,6 +156,10 @@ class Document(object):
     def from_tsv(cls, line, ln, fn):
         line = line.rstrip('\n')
         fields = line.split('\t')
+        if len(fields) == 5:
+            info('line {} in {}: got 5 fields; assuming empty abstract'.\
+                 format(ln, fn))
+            fields.append('')
         if len(fields) != 6:
             raise FormatError('line {} in {}: expected 6 fields, got {}: {}'.\
                               format(ln, fn, len(fields), line))
