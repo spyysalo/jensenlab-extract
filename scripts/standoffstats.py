@@ -4,7 +4,7 @@ import sys
 import os
 
 from collections import defaultdict, OrderedDict, Counter
-from logging import info
+from logging import info, warning
 
 from standoff import Textbound, Normalization
 
@@ -22,6 +22,8 @@ TEXT_BY_TYPE = 'text ({})'
 SAME_SPAN = 'same-span'
 CONTAINMENT = 'containment'
 CROSSING_SPAN = 'crossing-span'
+CONSISTENCY = 'consistency'
+
 
 # Order in which to show stats
 STATS_ORDER = [
@@ -31,6 +33,7 @@ STATS_ORDER = [
     TEXT_BY_TYPE,
     ENTITY_TEXT,
     ENTITY_TYPE,
+    CONSISTENCY,
 ]
 
 
@@ -84,10 +87,18 @@ def generate_id(prefix):
 generate_id.next_free = defaultdict(lambda: 1)
 
 
-def make_textbound(type_, span, text): 
+def make_textbound(type_, span_str, text):
     id_ = generate_id('T')
-    start, end = (int(i) for i in span.split())
-    return Textbound(id_, type_, start, end, text)
+    spans = []
+    for span in span_str.split(';'):
+        start, end = (int(i) for i in span.split())
+        spans.append((start, end))
+    min_start = min(s[0] for s in spans)
+    max_end = max(s[1] for s in spans)
+    if len(spans) > 1:
+        warning('replacing fragmented span {} with {} {}'.format(
+            span_str, min_start, max_end))
+    return Textbound(id_, type_, min_start, max_end, text)
 
 
 def take_stats(txt, ann, fn, stats):
@@ -107,20 +118,28 @@ def take_stats(txt, ann, fn, stats):
         else:
             assert False, 'internal error'
 
+    is_consistent = True
     overlapping = find_overlapping(annotations)
     for t1, t2 in overlapping:
         sorted_types = '{}-{}'.format(*sorted([t1.type, t2.type]))
         if t1.span_matches(t2):
+            if t1.type == t2.type:
+                # same span, different types
+                is_consistent = False
             stats[SAME_SPAN][sorted_types] += 1
         elif t1.contains(t2):
             stats[CONTAINMENT]['{} in {}'.format(t2.type, t1.type)] += 1
         elif t2.contains(t1):
             stats[CONTAINMENT]['{} in {}'.format(t1.type, t2.type)] += 1
         elif t1.span_crosses(t2):
+            is_consistent = False
             stats[CROSSING_SPAN]['{}/{}'.format(t1.type, t2.type)] += 1
         else:
             assert False, 'internal error'
-
+    if is_consistent:
+        stats[CONSISTENCY]['consistent'] += 1
+    else:
+        stats[CONSISTENCY]['inconsistent'] += 1
             
 def process_db(path, stats, options):
     # No context manager: close() can block and this is read-only
