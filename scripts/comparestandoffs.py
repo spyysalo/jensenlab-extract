@@ -36,6 +36,8 @@ def argparser():
     ap = argparse.ArgumentParser()
     ap.add_argument('-f', '--filtertypes', metavar='TYPE[,TYPE ...]',
                     default=None, help='Filter out annotations by type')
+    ap.add_argument('-l', '--limit', metavar='N', type=int, default=None,
+                    help='Only compare first N documents')
     ap.add_argument('-m', '--maptypes', default=False, action='store_true',
                     help='Apply mapping to type names (consistency)')
     ap.add_argument('-M', '--forcemap', default=False, action='store_true',
@@ -280,18 +282,23 @@ def compare_files(file1, file2, options, stats):
 
 
 def compare_dbs(path1, path2, options, stats):
-    with sqlitedict.SqliteDict(path1, flag='r') as db1:
-        with sqlitedict.SqliteDict(path2, flag='r') as db2:
-            for key, val1 in db1.items():
-                if os.path.splitext(key)[1] != options.suffix:
-                    continue
-                val2 = db2.get(key)
-                if val2 is None:
-                    warning('{} not found in {}'.format(key, path2))
-                    continue
-                ann1 = parse_standoff(val1, '{}/{}'.format(path1, key))
-                ann2 = parse_standoff(val2, '{}/{}'.format(path2, key))
-                stats = compare_annotations(ann1, ann2, options, stats, key)
+    # No context manager and no close() as this is read-only and close()
+    # can block for a long time for no apparent reason.
+    db1 = sqlitedict.SqliteDict(path1, flag='r', autocommit=False)
+    db2 = sqlitedict.SqliteDict(path2, flag='r', autocommit=False)
+    for key, val1 in db1.items():
+        if os.path.splitext(key)[1] != options.suffix:
+            continue
+        val2 = db2.get(key)
+        if val2 is None:
+            warning('{} not found in {}'.format(key, path2))
+            continue
+        ann1 = parse_standoff(val1, '{}/{}'.format(path1, key))
+        ann2 = parse_standoff(val2, '{}/{}'.format(path2, key))
+        stats = compare_annotations(ann1, ann2, options, stats, key)
+        if (options.limit is not None and
+            stats['doc-level']['TOTAL'] > options.limit):
+            return stats
     return stats
 
 
@@ -308,6 +315,9 @@ def compare_dirs(dir1, dir2, options, stats):
             stats = compare(path1, path2, options, stats)
         else:
             info('skipping {}'.format(name))
+        if (options.limit is not None and
+            stats['doc-level']['TOTAL'] > options.limit):
+            return stats
     return stats
 
 
