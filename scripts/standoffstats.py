@@ -62,6 +62,12 @@ def find_overlapping(textbounds):
     START, END = 's', 'e', #1, -1    # need END < START for sort to work right
     boundaries = []
     for t in textbounds:
+        if t.end <= t.start:
+            # TODO: zero-widths require special treatment: as ends sort
+            # before starts, the basic algorithm doesn't work if end==start.
+            warning('find_overlapping: ignoring zero-width textbound: {}'.\
+                    format(t))
+            continue
         boundaries.append((t.start, START, t))
         boundaries.append((t.end, END, t))
     boundaries.sort()
