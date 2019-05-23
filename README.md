@@ -1,6 +1,6 @@
-# jensenlab-extract
+# JensenLab tools
 
-Tools for working with JensenLab tools (https://jensenlab.org/resources/textmining/)
+Scripts for working with JensenLab tools (https://jensenlab.org/resources/textmining/)
 
 (Under construction)
 
