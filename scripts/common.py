@@ -152,13 +152,13 @@ def get_norm_id(id_, default, options):
 get_norm_id._cache = {}
 
 
-def rewrite_norm_id(id_, type_, species):
+def rewrite_norm_id(id_, typename, species):
     # Rewrite tagger IDs to NAMESPACE:ID format
-    if type_.startswith('Chemical') and id_.startswith('CIDs'):
+    if typename.startswith('Chemical') and id_.startswith('CIDs'):
         id_ = id_.replace('CIDs', 'CID:', 1)
-    elif type_ == 'Organism' and id_.isdigit():
+    elif typename == 'Organism' and id_.isdigit():
         id_ = 'NCBITaxon:{}'.format(id_)
-    elif type_ == 'Gene':
+    elif typename == 'Gene':
         if species == 'Arabidopsis thaliana' and id_.startswith('AT'):
             id_ = id_.replace('AT', 'AT:', 1)    # TAIR (A. thaliana)
         elif species == 'Drosophila melanogaster' and id_.startswith('FB'):
@@ -206,7 +206,18 @@ def read_streams(docs, tags):
             break
 
 
+def type_name(type_):
+    if isinstance(type_, str):
+        type_ = int(type_)
+    if type_ > 0:
+        return 'Gene'
+    else:
+        return TYPE_MAP.get(type_, '<UNKNOWN>')
+
+
 def typename_and_species(type_):
+    if isinstance(type_, str):
+        type_ = int(type_)
     if type_ > 0:    # Gene/protein of species with this NCBI tax id
         return ('Gene', get_taxname(type_))
     elif type_ < 0 and type_ in TYPE_MAP:    # Lookup, no species information
