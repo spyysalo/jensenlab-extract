@@ -6,7 +6,7 @@ import os
 from collections import OrderedDict
 from logging import warning, error
 
-from common import typename_and_species, rewrite_norm_id
+from common import type_name, rewrite_norm_id
 
 
 def argparser():
@@ -24,9 +24,16 @@ def argparser():
 def load_names(fn, names=None):
     if names is None:
         names = {}
-    read_count, store_count = 0, 0
-    with open(fn) as f:
+    read_count, error_count, store_count = 0, 0, 0
+    # binary mode as there are in cases encoding issues in this data.
+    with open(fn, 'rb') as f:
         for ln, l in enumerate(f, start=1):
+            try:
+                l = l.decode('utf-8')
+            except:
+                error('line {} in {}'.format(ln, fn))
+                error_count += 1
+                continue
             l = l.rstrip()
             fields = l.split('\t')
             serial, name = fields
@@ -34,8 +41,8 @@ def load_names(fn, names=None):
                 names[serial] = name
                 store_count += 1
             read_count += 1
-    print('read {} names, stored {} from {}'.format(
-        read_count, store_count, fn), file=sys.stderr)
+    print('read {} names, stored {} from {} ({} errors)'.format(
+        read_count, store_count, fn, error_count), file=sys.stderr)
     return names
 
 
@@ -56,19 +63,32 @@ def load_entities(fn):
     return entities
 
 
+def make_organism_name_map(names, entities):
+    organism_name = {}
+    for serial, (type_, id_) in entities.items():
+        if type_ == '-2' and serial in names:
+            organism_name[id_] = names[serial]
+    return organism_name
+
+
 def main(argv):
     args = argparser().parse_args(argv[1:])
     names = load_names(args.preferred)
     names = load_names(args.names, names)
     entities = load_entities(args.entities)
+    organism_name = make_organism_name_map(names, entities)
     for serial, (type_, id_) in entities.items():
         if serial not in names:
-            continue    # couldn't be tagger
+            continue    # couldn't be tagged
         name = names[serial]
-        typename, species = typename_and_species(type_)
-        if typename == 'Gene' and species is not None:
-            name = '{} ({})'.format(name, species)    # attach species
-        id_ = rewrite_norm_id(id_, typename, species)
+        typename = type_name(type_)
+        if typename == 'Gene':
+            organism = organism_name.get(type_, '<UNKNOWN>')
+        else:
+            organism = None
+        if organism is not None:
+            name = '{} ({})'.format(name, organism)    # attach organism
+        id_ = rewrite_norm_id(id_, typename, organism)
         print('\t'.join([serial, name, id_]))
     return 0
 
